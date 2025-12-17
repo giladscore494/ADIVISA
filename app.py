@@ -7,91 +7,83 @@ import traceback
 # --- 1. הגדרות עמוד ועיצוב (CSS מתקדם) ---
 st.set_page_config(page_title="Soldier2Civ AI", page_icon="🎗️", layout="centered")
 
-# הזרקת CSS ליצירת כרטיסיות, צבעים וגרדיאנטים
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;900&display=swap');
     
-    /* הגדרות בסיס */
     html, body, [class*="css"] { 
         font-family: 'Heebo', sans-serif; 
         direction: rtl; 
         text-align: right;
-        background-color: #f0f2f6; /* רקע אפור בהיר מאוד */
+        background-color: #f4f6f9; /* רקע כללי אפור-כחלחל בהיר */
     }
     
-    /* --- עיצוב כרטיסיות (Cards) --- */
-    .st-card {
-        background-color: #ffffff;
-        padding: 2rem;
-        border-radius: 20px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-        border: 1px solid #e0e0e0;
-        margin-bottom: 20px;
-        transition: transform 0.3s ease;
-    }
-    .st-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 15px 35px rgba(0,0,0,0.1);
-    }
-
-    /* כרטיסיית תוצאה */
+    /* --- כרטיסיית התוצאה (הלב של העיצוב) --- */
     .result-card {
-        background: linear-gradient(135deg, #ffffff 0%, #f9faff 100%);
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        padding: 30px;
+        border-radius: 20px;
         border-right: 6px solid #4b6cb7; /* פס כחול בצד */
+        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+        color: #2c3e50;
+        font-size: 1.1rem;
+        line-height: 1.6;
+        white-space: pre-wrap; /* שומר על ירידות שורה */
+        margin-top: 20px;
     }
     
-    /* כרטיסיית פרומפט */
-    .prompt-card {
-         background-color: #1e1e1e; /* רקע כהה */
-         color: #00ff00 !important; /* טקסט ירוק זוהר */
-         border: 2px solid #333;
+    /* כרטיסיית קלט */
+    .input-card {
+        background-color: #ffffff;
+        padding: 25px;
+        border-radius: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+        border: 1px solid #edf2f7;
     }
 
-    /* --- כותרות צבעוניות --- */
+    /* כותרות */
     h1 {
-        background: -webkit-linear-gradient(left, #182848, #4b6cb7);
+        background: -webkit-linear-gradient(left, #1e3c72, #2a5298);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 900 !important;
+        text-align: center;
+        margin-bottom: 0px;
     }
-    h3 { color: #4b6cb7; font-weight: 700; }
+    .subtitle {
+        text-align: center;
+        color: #666;
+        font-size: 1.1em;
+        margin-bottom: 30px;
+    }
 
-    /* --- עיצוב כפתורים מודרני --- */
+    /* כפתורים */
     .stButton>button { 
-        width: 100%; 
-        border-radius: 15px; 
-        height: 3.5em; 
-        font-weight: bold; 
-        font-size: 18px; 
-        border: none;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        transition: all 0.3s ease;
+        width: 100%; border-radius: 12px; height: 3.5em; font-weight: bold; border: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1); transition: 0.3s;
     }
-    /* כפתור ראשי - גרדיאנט כחול */
+    
+    /* כפתור ראשי */
     div[data-testid="stHorizontalBlock"] > div:nth-child(1) button {
-        background: linear-gradient(90deg, #182848 0%, #4b6cb7 100%);
+        background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
         color: white;
     }
     div[data-testid="stHorizontalBlock"] > div:nth-child(1) button:hover {
-        box-shadow: 0 8px 25px rgba(75, 108, 183, 0.4);
-        transform: scale(1.02);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(30, 60, 114, 0.3);
     }
-    /* כפתור משני - לבן עם מסגרת */
+    
+    /* כפתור משני */
     div[data-testid="stHorizontalBlock"] > div:nth-child(2) button {
-        background-color: white;
-        color: #182848;
-        border: 2px solid #182848;
-    }
-    div[data-testid="stHorizontalBlock"] > div:nth-child(2) button:hover {
-        background-color: #f0f2f6;
+        background-color: #ffffff;
+        color: #1e3c72;
+        border: 2px solid #e1e4e8;
     }
 
-    /* הסתרת אלמנטים מיותרים */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    .stCode { direction: ltr; text-align: left; background-color: #2d2d2d !important; }
+    /* הסתרת רכיבי מערכת */
+    #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
+    .stCode { direction: ltr; text-align: left; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -101,40 +93,45 @@ if "generated_response" not in st.session_state:
 if "last_prompt_mode" not in st.session_state:
     st.session_state.last_prompt_mode = None
 
-# --- 3. פונקציית הליבה (ללא שינוי מהגרסה הקודמת) ---
+# --- 3. פונקציית הליבה (Gemini 2.5 + Caching) ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_cached_response(template_prompt, user_input, mode="full"):
     try:
         if "GEMINI_API_KEY" not in st.secrets:
             return {"status": "error", "message": "חסר מפתח GEMINI_API_KEY ב-Secrets"}
+        
         api_key = st.secrets["GEMINI_API_KEY"]
         client = genai.Client(api_key=api_key)
+        
         full_query = template_prompt.format(user_input=user_input)
         
         if mode == "prompt_only":
             return {"status": "success", "text": full_query}
         
+        # הגדרת חיפוש
         google_search_tool = types.Tool(google_search=types.GoogleSearch())
+        
+        # הוראות מערכת קצרות וקולעות
+        sys_instruct = "You are a concise Israeli advisor. Answer in Hebrew. Use bullet points and spacing. Keep answers short, direct, and under 200 words."
 
+        # ניסיון ראשי: Gemini 2.5 Flash
         try:
-            # שיניתי את הוראות המערכת שיהיו קצרות יותר לפי בקשתך הקודמת
-            system_instruction = "You are a concise Israeli advisor. Answer in Hebrew. Use bullet points. Keep answers short, direct, and under 150 words. No introduction or summary paragraphs."
-            
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=full_query,
                 config=types.GenerateContentConfig(
                     tools=[google_search_tool],
-                    system_instruction=system_instruction
+                    system_instruction=sys_instruct
                 )
             )
         except Exception:
+            # גיבוי: Gemini 2.0 Flash
             response = client.models.generate_content(
                 model='gemini-2.0-flash',
                 contents=full_query,
                 config=types.GenerateContentConfig(
                     tools=[google_search_tool],
-                    system_instruction=system_instruction
+                    system_instruction=sys_instruct
                 )
             )
 
@@ -147,20 +144,17 @@ def get_cached_response(template_prompt, user_input, mode="full"):
             "traceback": traceback.format_exc()
         }
 
-# --- 4. ממשק המשתמש (UI) החדש ---
+# --- 4. ממשק המשתמש (UI) ---
 
-# כותרת ראשית
 st.markdown("<h1>🎗️ Soldier2Civ AI</h1>", unsafe_allow_html=True)
-st.markdown("<h3>המדריך החכם לאזרחות | תכל'ס, קצר ולעניין.</h3>", unsafe_allow_html=True)
+st.markdown("<div class='subtitle'>המדריך החכם לאזרחות | תכל'ס, קצר ולעניין.</div>", unsafe_allow_html=True)
 
-# --- כרטיסיית הקלט (Input Card) ---
-# עוטף את כל אזור הבחירה והכתיבה בכרטיסייה מעוצבת
-st.markdown('<div class="st-card">', unsafe_allow_html=True)
+# --- כרטיסיית הקלט ---
+st.markdown('<div class="input-card">', unsafe_allow_html=True)
 
 option = st.selectbox("בחר נושא:", list(PROMPT_TEMPLATES.keys()))
 template = PROMPT_TEMPLATES[option]
 
-# שימוש באלמנט צבעוני של סטרים ליט להסבר
 st.info(f"ℹ️ **מה מקבלים?** {template['description']}")
 
 user_input = st.text_area("פרט את בקשתך (תפקיד, יחידה, מטרות):", height=100)
@@ -170,24 +164,20 @@ trigger_search = False
 trigger_prompt = False
 
 with col1:
-    # הכפתור הזה יקבל אוטומטית את עיצוב הגרדיאנט הכחול מה-CSS
-    if st.button("🚀 קבל תשובה (AI)"):
+    if st.button("🚀 קבל תשובה"):
         trigger_search = True
 with col2:
-    # הכפתור הזה יקבל את עיצוב המסגרת
-    if st.button("📝 רק פרומפט להעתקה"):
+    if st.button("📝 העתק פרומפט"):
         trigger_prompt = True
 
-st.markdown('</div>', unsafe_allow_html=True) # סגירת כרטיסיית הקלט
-# ------------------------------------
-
+st.markdown('</div>', unsafe_allow_html=True)
 
 # --- 5. לוגיקה ---
 if (trigger_search or trigger_prompt) and len(user_input) < 3:
     st.toast("⚠️ נא לכתוב לפחות 3 תווים.", icon="🛑")
 
 elif trigger_search:
-    with st.spinner("🤖 מתחבר לגוגל (Gemini 2.5) ומנתח נתונים..."):
+    with st.spinner("🤖 מנתח נתונים וסורק את גוגל..."):
         result = get_cached_response(template["prompt"], user_input, mode="full")
         st.session_state.generated_response = result
         st.session_state.last_prompt_mode = "full"
@@ -197,14 +187,12 @@ elif trigger_prompt:
     st.session_state.generated_response = result
     st.session_state.last_prompt_mode = "prompt"
 
-# --- 6. תצוגת תוצאות (בתוך כרטיסיות צבעוניות) ---
+# --- 6. תצוגת תוצאות (בתוך כרטיסיות מעוצבות) ---
 if st.session_state.generated_response:
     result = st.session_state.generated_response
     if isinstance(result, str): result = {"status": "success", "text": result}
 
-    st.write("") # מרווח קטן
-
-    # מקרה שגיאה
+    # שגיאה
     if result.get("status") == "error":
         st.error("❌ שגיאה בתקשורת")
         with st.expander("פרטים טכניים"):
@@ -216,31 +204,26 @@ if st.session_state.generated_response:
 
     # --- כרטיסיית תשובה מלאה ---
     elif st.session_state.last_prompt_mode == "full":
-        # פתיחת דיב של כרטיסיית תוצאה
-        st.markdown('<div class="st-card result-card">', unsafe_allow_html=True)
+        # שימוש ב-HTML מותאם אישית להצגת הכרטיסייה
+        st.markdown(f"""
+        <div class="result-card">
+            {result.get("text", "")}
+        </div>
+        """, unsafe_allow_html=True)
         
-        st.success("✅ התשובה מוכנה (Gemini 2.5 Flash)")
-        st.markdown(result.get("text", ""))
-        
-        st.markdown('</div>', unsafe_allow_html=True) # סגירת דיב
-        
+        st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔄 התחל מחדש"):
             st.session_state.generated_response = None
             st.rerun()
 
-    # --- כרטיסיית פרומפט להעתקה ---
+    # --- כרטיסיית פרומפט ---
     elif st.session_state.last_prompt_mode == "prompt":
-        # פתיחת דיב של כרטיסיית פרומפט כהה
-        st.markdown('<div class="st-card prompt-card">', unsafe_allow_html=True)
-        
-        st.markdown("**הפרומפט מוכן. העתק והדבק בצ'אט אחר:**")
+        st.info("הפרומפט מוכן להעתקה 👇")
         st.code(result.get("text", ""), language="text")
-        
-        st.markdown('</div>', unsafe_allow_html=True) # סגירת דיב
 
 # --- פוטר ---
 st.markdown("""
-<div style='text-align: center; color: #888; font-size: 0.8em; margin-top: 30px;'>
+<div style='text-align: center; color: #888; font-size: 0.8em; margin-top: 40px;'>
     🔒 המידע מאובטח ואינו נשמר | פותח עבור משתחררים 2025
 </div>
 """, unsafe_allow_html=True)
