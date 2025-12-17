@@ -2,7 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from templates import PROMPT_TEMPLATES
-import traceback # ספרייה לניתוח שגיאות עמוק
+import traceback
 
 # --- 1. הגדרות עמוד ועיצוב ---
 st.set_page_config(page_title="Soldier2Civ AI", page_icon="🎗️", layout="centered")
@@ -27,16 +27,17 @@ if "generated_response" not in st.session_state:
     st.session_state.generated_response = None
 if "last_prompt_mode" not in st.session_state:
     st.session_state.last_prompt_mode = None
-if "debug_info" not in st.session_state:
-    st.session_state.debug_info = None
 
 # --- 3. חיבור API וטיפול במפתחות ---
 try:
-    api_key = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=api_key)
+    if "GEMINI_API_KEY" in st.secrets:
+        api_key = st.secrets["GEMINI_API_KEY"]
+        genai.configure(api_key=api_key)
+    else:
+        st.error("⚠️ מפתח ה-API חסר. נא להגדיר ב-Secrets.")
+        st.stop()
 except Exception as e:
-    st.error("⚠️ שגיאה בהגדרת המפתח (Secrets):")
-    st.code(str(e))
+    st.error(f"⚠️ שגיאה בהגדרת המפתח: {str(e)}")
     st.stop()
 
 safety_settings = {
@@ -46,35 +47,45 @@ safety_settings = {
     HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
 }
 
-# --- שיפור: פונקציה עם טיפול שגיאות מורחב ---
+# --- פונקציית הליבה עם מנגנון גיבוי (Fallback) ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_cached_response(template_prompt, user_input, mode="full"):
+    full_query = template_prompt.format(user_input=user_input)
+    
+    # אם המשתמש רוצה רק פרומפט, אין צורך לקרוא ל-API
+    if mode == "prompt_only":
+        return {"status": "success", "text": full_query}
+
+    # ניסיון ראשון: מודל FLASH (מהיר וזול)
     try:
-        # הגדרת המודל
         model = genai.GenerativeModel(
             model_name='gemini-1.5-flash',
-            tools=[{"google_search_retrieval": {}}], # מודול חיפוש
-            system_instruction="You are an expert Israeli veteran consultant. Always answer in Hebrew. Be precise and factual.",
+            tools=[{"google_search_retrieval": {}}],
+            system_instruction="You are an expert Israeli veteran consultant. Always answer in Hebrew. Be precise.",
             safety_settings=safety_settings
         )
-        
-        full_query = template_prompt.format(user_input=user_input)
-        
-        # אם המשתמש רוצה רק את הפרומפט
-        if mode == "prompt_only":
-            return {"status": "success", "text": full_query}
-        
-        # ביצוע הקריאה ל-AI
         response = model.generate_content(full_query)
         return {"status": "success", "text": response.text}
 
-    except Exception as e:
-        # החזרת אובייקט שגיאה מפורט
-        return {
-            "status": "error", 
-            "message": str(e),
-            "traceback": traceback.format_exc()
-        }
+    except Exception as e_flash:
+        # אם מודל FLASH נכשל (שגיאת 404 וכו'), מנסים את מודל PRO
+        try:
+            # print(f"Flash failed, trying Pro. Error: {e_flash}") # לדיבוג פנימי
+            model_backup = genai.GenerativeModel(
+                model_name='gemini-pro', # מודל גיבוי שתמיד עובד
+                system_instruction="You are an expert Israeli veteran consultant. Always answer in Hebrew.",
+                safety_settings=safety_settings
+            )
+            response = model_backup.generate_content(full_query)
+            return {"status": "success", "text": response.text + "\n\n*(נוצר באמצעות מודל גיבוי)*"}
+            
+        except Exception as e_final:
+            # אם גם הגיבוי נכשל - מחזירים שגיאה
+            return {
+                "status": "error", 
+                "message": str(e_flash), # מציגים את השגיאה המקורית
+                "traceback": traceback.format_exc()
+            }
 
 # --- 4. ממשק המשתמש ---
 st.title("🎗️ Soldier2Civ AI")
@@ -93,7 +104,6 @@ trigger_search = False
 trigger_prompt = False
 
 with col1:
-    # כפתור ראשי בולט
     if st.button("🚀 קבל תשובה מלאה", type="primary"):
         trigger_search = True
 
@@ -116,33 +126,40 @@ elif trigger_prompt:
     st.session_state.generated_response = result
     st.session_state.last_prompt_mode = "prompt"
 
-# --- 6. תצוגת תוצאות ודיבוג ---
+# --- 6. תצוגת תוצאות (עם התיקון לקריסה) ---
 if st.session_state.generated_response:
     result = st.session_state.generated_response
+    
+    # --- תיקון תאימות לאחור (מונע את ה-TypeError) ---
+    if isinstance(result, str):
+        result = {"status": "success", "text": result}
+    # --- סוף תיקון ---
+
     st.markdown("---")
     
-    # מקרה של שגיאה - תצוגה מפורטת
-    if result["status"] == "error":
-        st.error("❌ התגלתה שגיאה בתקשורת עם ה-AI")
-        st.write("הנה פירוט השגיאה הטכנית (צלם את זה ושלח למפתח):")
-        st.code(result["message"], language="text")
+    # 1. טיפול בשגיאה
+    if result.get("status") == "error":
+        st.error("❌ התגלתה שגיאה בתקשורת")
+        st.warning("פרטי השגיאה למפתחים:")
+        st.code(result.get("message", "Unknown Error"), language="text")
+        with st.expander("ראה Traceback מלא"):
+            st.code(result.get("traceback", ""), language="python")
         
-        with st.expander("🕵️ צפה ב-Log המלא (למתכנתים)"):
-            st.code(result["traceback"], language="python")
-            
         if st.button("נסה שוב (נקה מטמון)"):
             st.cache_data.clear()
+            st.session_state.generated_response = None
             st.rerun()
 
-    # מקרה הצלחה - תשובה מלאה
+    # 2. הצלחה - תשובה מלאה
     elif st.session_state.last_prompt_mode == "full":
         st.success("התשובה מוכנה! 👇")
-        st.markdown(result["text"])
+        st.markdown(result.get("text", ""))
+        
         if st.button("🔄 נקה תוצאות"):
             st.session_state.generated_response = None
             st.rerun()
 
-    # מקרה הצלחה - העתקת פרומפט
+    # 3. הצלחה - פרומפט
     elif st.session_state.last_prompt_mode == "prompt":
         st.info("הפרומפט מוכן להעתקה 👇")
-        st.code(result["text"], language="text")
+        st.code(result.get("text", ""), language="text")
