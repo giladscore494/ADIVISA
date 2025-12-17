@@ -1,6 +1,6 @@
 import streamlit as st
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
+from google import genai
+from google.genai import types
 from templates import PROMPT_TEMPLATES
 import traceback
 
@@ -28,68 +28,64 @@ if "generated_response" not in st.session_state:
 if "last_prompt_mode" not in st.session_state:
     st.session_state.last_prompt_mode = None
 
-# --- 3. חיבור API וטיפול במפתחות ---
-try:
-    if "GEMINI_API_KEY" in st.secrets:
-        api_key = st.secrets["GEMINI_API_KEY"]
-        genai.configure(api_key=api_key)
-    else:
-        st.error("⚠️ מפתח ה-API חסר. נא להגדיר ב-Secrets.")
-        st.stop()
-except Exception as e:
-    st.error(f"⚠️ שגיאה בהגדרת המפתח: {str(e)}")
-    st.stop()
-
-safety_settings = {
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-}
-
-# --- פונקציית הליבה עם מנגנון גיבוי (Fallback) ---
+# --- 3. פונקציית הליבה עם הספרייה החדשה (Google GenAI SDK) ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_cached_response(template_prompt, user_input, mode="full"):
-    full_query = template_prompt.format(user_input=user_input)
-    
-    # אם המשתמש רוצה רק פרומפט, אין צורך לקרוא ל-API
-    if mode == "prompt_only":
-        return {"status": "success", "text": full_query}
-
-    # ניסיון ראשון: מודל FLASH (מהיר וזול)
     try:
-        model = genai.GenerativeModel(
-            model_name='gemini-1.5-flash',
-            tools=[{"google_search_retrieval": {}}],
-            system_instruction="You are an expert Israeli veteran consultant. Always answer in Hebrew. Be precise.",
-            safety_settings=safety_settings
+        # בדיקת מפתח API
+        if "GEMINI_API_KEY" not in st.secrets:
+            return {"status": "error", "message": "חסר מפתח GEMINI_API_KEY ב-Secrets"}
+            
+        api_key = st.secrets["GEMINI_API_KEY"]
+        
+        # יצירת הקליינט החדש (New SDK Syntax)
+        client = genai.Client(api_key=api_key)
+        
+        full_query = template_prompt.format(user_input=user_input)
+        
+        # אם המשתמש רוצה רק את הפרומפט
+        if mode == "prompt_only":
+            return {"status": "success", "text": full_query}
+        
+        # הגדרת כלי החיפוש בסינטקס החדש
+        google_search_tool = types.Tool(
+            google_search=types.GoogleSearch()
         )
-        response = model.generate_content(full_query)
+
+        # קריאה למודל המעודכן (Gemini 2.5 Flash)
+        # שימוש במנגנון fallback: אם 2.5 לא זמין באזורך, ננסה את 2.0
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=full_query,
+                config=types.GenerateContentConfig(
+                    tools=[google_search_tool],
+                    system_instruction="You are an expert Israeli veteran consultant. Always answer in Hebrew. Be precise and factual."
+                )
+            )
+        except Exception:
+            # נסיון משני עם מודל 2.0 אם 2.5 נכשל
+            response = client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=full_query,
+                config=types.GenerateContentConfig(
+                    tools=[google_search_tool],
+                    system_instruction="You are an expert Israeli veteran consultant. Always answer in Hebrew."
+                )
+            )
+
         return {"status": "success", "text": response.text}
 
-    except Exception as e_flash:
-        # אם מודל FLASH נכשל (שגיאת 404 וכו'), מנסים את מודל PRO
-        try:
-            # print(f"Flash failed, trying Pro. Error: {e_flash}") # לדיבוג פנימי
-            model_backup = genai.GenerativeModel(
-                model_name='gemini-pro', # מודל גיבוי שתמיד עובד
-                system_instruction="You are an expert Israeli veteran consultant. Always answer in Hebrew.",
-                safety_settings=safety_settings
-            )
-            response = model_backup.generate_content(full_query)
-            return {"status": "success", "text": response.text + "\n\n*(נוצר באמצעות מודל גיבוי)*"}
-            
-        except Exception as e_final:
-            # אם גם הגיבוי נכשל - מחזירים שגיאה
-            return {
-                "status": "error", 
-                "message": str(e_flash), # מציגים את השגיאה המקורית
-                "traceback": traceback.format_exc()
-            }
+    except Exception as e:
+        return {
+            "status": "error", 
+            "message": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 # --- 4. ממשק המשתמש ---
 st.title("🎗️ Soldier2Civ AI")
-st.caption("המדריך החכם לאזרחות | מבוסס בינה מלאכותית")
+st.caption("המדריך החכם לאזרחות | מבוסס Gemini 2.5")
 
 option = st.selectbox("בחר נושא:", list(PROMPT_TEMPLATES.keys()))
 template = PROMPT_TEMPLATES[option]
@@ -116,7 +112,7 @@ if (trigger_search or trigger_prompt) and len(user_input) < 3:
     st.toast("⚠️ נא לכתוב לפחות 3 תווים.", icon="🛑")
 
 elif trigger_search:
-    with st.spinner("🤖 מתחבר לגוגל ומנתח נתונים..."):
+    with st.spinner("🤖 מתחבר לגוגל (Gemini 2.5) ומנתח נתונים..."):
         result = get_cached_response(template["prompt"], user_input, mode="full")
         st.session_state.generated_response = result
         st.session_state.last_prompt_mode = "full"
@@ -126,40 +122,35 @@ elif trigger_prompt:
     st.session_state.generated_response = result
     st.session_state.last_prompt_mode = "prompt"
 
-# --- 6. תצוגת תוצאות (עם התיקון לקריסה) ---
+# --- 6. תצוגת תוצאות ---
 if st.session_state.generated_response:
     result = st.session_state.generated_response
     
-    # --- תיקון תאימות לאחור (מונע את ה-TypeError) ---
+    # תאימות לאחור
     if isinstance(result, str):
         result = {"status": "success", "text": result}
-    # --- סוף תיקון ---
 
     st.markdown("---")
     
-    # 1. טיפול בשגיאה
     if result.get("status") == "error":
-        st.error("❌ התגלתה שגיאה בתקשורת")
-        st.warning("פרטי השגיאה למפתחים:")
+        st.error("❌ שגיאה בתקשורת עם המודל החדש")
         st.code(result.get("message", "Unknown Error"), language="text")
-        with st.expander("ראה Traceback מלא"):
+        with st.expander("Traceback למפתחים"):
             st.code(result.get("traceback", ""), language="python")
         
-        if st.button("נסה שוב (נקה מטמון)"):
+        if st.button("נסה שוב"):
             st.cache_data.clear()
             st.session_state.generated_response = None
             st.rerun()
 
-    # 2. הצלחה - תשובה מלאה
     elif st.session_state.last_prompt_mode == "full":
-        st.success("התשובה מוכנה! 👇")
+        st.success("התשובה מוכנה! (Gemini 2.5 Flash) 👇")
         st.markdown(result.get("text", ""))
         
-        if st.button("🔄 נקה תוצאות"):
+        if st.button("🔄 נקה"):
             st.session_state.generated_response = None
             st.rerun()
 
-    # 3. הצלחה - פרומפט
     elif st.session_state.last_prompt_mode == "prompt":
         st.info("הפרומפט מוכן להעתקה 👇")
         st.code(result.get("text", ""), language="text")
