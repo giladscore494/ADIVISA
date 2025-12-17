@@ -11,66 +11,40 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Assistant', sans-serif; direction: rtl; text-align: right; }
-    
-    /* עיצוב כפתורים מודרני */
-    .stButton>button { 
-        width: 100%; 
-        border-radius: 12px; 
-        height: 3em; 
-        font-weight: bold; 
-        font-size: 16px; 
-        transition: 0.3s; 
-        border: none;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }
-    .stButton>button:hover { 
-        transform: translateY(-2px); 
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }
-    
-    /* יישור קוד לשמאל */
+    .stButton>button { width: 100%; border-radius: 12px; height: 3em; font-weight: bold; font-size: 16px; transition: 0.3s; }
+    .stButton>button:hover { transform: scale(1.02); }
     .stCode { direction: ltr; text-align: left; }
-    
-    /* הסתרת אלמנטים מיותרים של המערכת למראה נקי */
+    /* הסתרת המבורגר של סטרים-ליט למראה נקי יותר */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
 # --- 2. אתחול משתני זיכרון (Session State) ---
-# מונע מהתשובה להיעלם ברענון הדף או לחיצה על כפתורים
+# זה מונע מהתשובה להיעלם כשלוחצים על כפתורים אחרים
 if "generated_response" not in st.session_state:
     st.session_state.generated_response = None
 if "last_prompt_mode" not in st.session_state:
     st.session_state.last_prompt_mode = None
 
-# --- 3. חיבור API מאובטח (מתוך ה-Secrets) ---
-try:
-    # כאן הקוד מושך את המפתח שהגדרת בסיקרט
-    api_key = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=api_key)
-except FileNotFoundError:
-    st.error("⚠️ קובץ Secrets לא נמצא (בפיתוח מקומי יש ליצור .streamlit/secrets.toml)")
-    st.stop()
-except KeyError:
-    st.error("⚠️ המפתח 'GEMINI_API_KEY' חסר בהגדרות ה-Secrets של סטרים-ליט.")
+# --- 3. חיבור API ופונקציות ליבה ---
+if "GEMINI_API_KEY" not in st.secrets:
+    st.error("⚠️ שגיאה קריטית: מפתח API חסר.")
     st.stop()
 
-# הגדרות בטיחות - מאפשר דיון בנושאים צבאיים בלי חסימות מיותרות
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+
+# הגדרות בטיחות
 safety_settings = {
     HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
     HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
 }
 
-# --- שיפור קריטי: CACHING (מטמון) ---
-# שומר את התשובה בזיכרון לשעה כדי לחסוך קריאות ל-API ולהאיץ את האתר
-@st.cache_data(ttl=3600, show_spinner=False)
+# --- שיפור קריטי: CACHING ---
+# הפונקציה הזו שומרת תוצאות במטמון. אם אותה שאלה נשאלת שוב - התשובה מגיעה מיד בלי לחייב את גוגל.
+@st.cache_data(ttl=3600, show_spinner=False) # שומר בזיכרון לשעה
 def get_cached_response(template_prompt, user_input, mode="full"):
     try:
-        # הגדרת המודל עם חיבור לחיפוש בגוגל
         model = genai.GenerativeModel(
             model_name='gemini-1.5-flash',
             tools=[{"google_search_retrieval": {}}],
@@ -90,25 +64,25 @@ def get_cached_response(template_prompt, user_input, mode="full"):
 
 # --- 4. ממשק המשתמש (UI) ---
 st.title("🎗️ Soldier2Civ AI")
-st.markdown("### המדריך החכם לאזרחות | מבוסס AI ונתוני אמת")
+st.markdown("### המדריך החכם לאזרחות | מבוסס בינה מלאכותית")
 
 # בחירת קטגוריה
 option = st.selectbox("בחר נושא:", list(PROMPT_TEMPLATES.keys()))
 template = PROMPT_TEMPLATES[option]
 
-# תצוגת הסבר נפתחת
-with st.expander("ℹ️ איך זה עובד?", expanded=False):
+# תצוגת הסבר קצרה ואלגנטית
+with st.expander("ℹ️ מה הכלי עושה בקטגוריה זו?", expanded=False):
     st.write(template["description"])
 
 # טופס קלט
 user_input = st.text_area("פרט את בקשתך (תפקיד, יחידה, מטרות):", 
                          height=100, 
-                         placeholder="דוגמה: הייתי לוחם בחיל הים, משתחרר עוד חודש, רוצה לדעת איזה מלגות מתאימות ללימודי הנדסה...")
+                         placeholder="למשל: לוחם בגולני, משתחרר עוד חודש, רוצה לדעת כמה פיקדון מגיע לי ואיך מושכים אותו...")
 
 # כפתורי פעולה בטורים
 col1, col2 = st.columns(2)
 
-# משתנים לזיהוי איזה כפתור נלחץ
+# לוגיקה לכפתורים
 trigger_search = False
 trigger_prompt = False
 
@@ -120,7 +94,7 @@ with col2:
     if st.button("📝 העתק פרומפט"):
         trigger_prompt = True
 
-# --- 5. לוגיקה ועיבוד ---
+# --- 5. עיבוד הלוגיקה והצגת תוצאות ---
 
 # בדיקת תקינות קלט (Validation)
 if (trigger_search or trigger_prompt) and len(user_input) < 3:
@@ -128,7 +102,7 @@ if (trigger_search or trigger_prompt) and len(user_input) < 3:
 
 elif trigger_search:
     with st.spinner("🤖 סורק את הרשת ומנתח נתונים..."):
-        # קריאה לפונקציה (משתמשת במטמון אם קיים)
+        # קריאה לפונקציה המטמונת
         response_text = get_cached_response(template["prompt"], user_input, mode="full")
         
         # שמירה ב-State
@@ -141,36 +115,30 @@ elif trigger_prompt:
     st.session_state.generated_response = prompt_text
     st.session_state.last_prompt_mode = "prompt"
 
-# --- 6. אזור התצוגה (Persistent Display) ---
-# מציג את התוצאה כל עוד היא קיימת בזיכרון, גם אחרי רענון
+# --- 6. אזור התצוגה (Persistent Display area) ---
+# החלק הזה ירוץ תמיד אם יש מידע בזיכרון, גם אם ה-UI מתרענן
 if st.session_state.generated_response:
     st.markdown("---")
     
-    # טיפול בשגיאות טכניות
     if "Error:" in st.session_state.generated_response:
-        st.error("אופס, הייתה בעיה בתקשורת עם השרת. אנא נסה שוב בעוד רגע.")
-        st.caption(st.session_state.generated_response) # הצגת שגיאה למפתח (אופציונלי)
+        st.error("אופס, הייתה בעיה בתקשורת. נסה שוב בעוד רגע.")
     
-    # הצגת תשובה מלאה
     elif st.session_state.last_prompt_mode == "full":
         st.success("התשובה מוכנה! 👇")
         st.markdown(st.session_state.generated_response)
-        
-        # כפתור ניקוי
-        if st.button("🔄 התחל מחדש / נקה"):
+        if st.button("🔄 נקה תוצאות"):
             st.session_state.generated_response = None
-            st.rerun()
+            st.rerun() # רענון מהיר
             
-    # הצגת פרומפט להעתקה
     elif st.session_state.last_prompt_mode == "prompt":
         st.info("הפרומפט מוכן להעתקה 👇")
         st.code(st.session_state.generated_response, language="text")
-        st.caption("טיפ: העתק את הטקסט והדבק אותו ב-ChatGPT או Claude לקבלת ניתוח מעמיק נוסף.")
+        st.caption("טיפ: העתק את הטקסט והדבק ב-ChatGPT או Claude לקבלת תוצאה מפורטת.")
 
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown("""
 <div style='text-align: center; color: #888; font-size: 0.8em;'>
     🔒 המידע מעובד בזמן אמת ואינו נשמר בשרתים שלנו.<br>
-    © 2025 Soldier2Civ AI
+    © 2025 Gilad Projects
 </div>
 """, unsafe_allow_html=True)
